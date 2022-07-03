@@ -132,34 +132,41 @@ async function checkVersion() {
  * @returns {Promise<import("express").Express>} The server instance.
  */
 async function consturctServer(moduleDefs) {
+  // 创建一个应用
   const app = express()
+
+  // 设置为true，则客户端的IP地址被理解为X-Forwarded-*报头中最左边的条目
   app.set('trust proxy', true)
 
   /**
-   * CORS & Preflight request
+   * 配置CORS & 预检请求
    */
   app.use((req, res, next) => {
     if (req.path !== '/' && !req.path.includes('.')) {
       res.set({
-        'Access-Control-Allow-Credentials': true,
-        'Access-Control-Allow-Origin': req.headers.origin || '*',
-        'Access-Control-Allow-Headers': 'X-Requested-With,Content-Type',
-        'Access-Control-Allow-Methods': 'PUT,POST,GET,DELETE,OPTIONS',
-        'Content-Type': 'application/json; charset=utf-8',
+        'Access-Control-Allow-Credentials': true, // 跨域情况下，允许客户端携带验证信息，比如cookie，同时，前端发送请求时也需要设置withCredentials: true
+        'Access-Control-Allow-Origin': req.headers.origin || '*', // 允许跨域请求的域名，设置为*代表允许所有域名
+        'Access-Control-Allow-Headers': 'X-Requested-With,Content-Type', // 用于给预检请求(options)列出服务端允许的自定义标头，如果前端发送的请求中包含自定义的请求标头，且该标头不包含在Access-Control-Allow-Headers中，那么该请求无法成功发起
+        'Access-Control-Allow-Methods': 'PUT,POST,GET,DELETE,OPTIONS', // 设置跨域请求允许的请求方法理想
+        'Content-Type': 'application/json; charset=utf-8', // 设置响应数据的类型及编码
       })
     }
+    // OPTIONS为预检请求，复杂请求会在发送真正的请求前先发送一个预检请求，获取服务器支持的Access-Control-Allow-xxx相关信息，判断后续是否有必要再发送真正的请求，返回状态码204代表请求成功，但是没有内容
     req.method === 'OPTIONS' ? res.status(204).end() : next()
   })
 
   /**
-   * Cookie Parser
+   * 解析Cookie
    */
   app.use((req, _, next) => {
     req.cookies = {}
     //;(req.headers.cookie || '').split(/\s*;\s*/).forEach((pair) => { //  Polynomial regular expression //
+    // 从请求头中读取cookie，cookie格式为：name=value;name2=value2...，所以先根据;切割为数组
     ;(req.headers.cookie || '').split(/;\s+|(?<!\s)\s+$/g).forEach((pair) => {
       let crack = pair.indexOf('=')
+      // 没有值的直接跳过
       if (crack < 1 || crack == pair.length - 1) return
+      // 将cookie保存到cookies对象上
       req.cookies[decode(pair.slice(0, crack)).trim()] = decode(
         pair.slice(crack + 1),
       ).trim()
@@ -176,7 +183,7 @@ async function consturctServer(moduleDefs) {
   app.use(fileUpload())
 
   /**
-   * Serving static files
+   * 将public目录下的文件作为静态文件提供
    */
   app.use(express.static(path.join(__dirname, 'public')))
 
