@@ -175,11 +175,10 @@ async function consturctServer(moduleDefs) {
   })
 
   /**
-   * Body Parser and File Upload
+   * 请求体解析和文件上传处理
    */
   app.use(express.json())
   app.use(express.urlencoded({ extended: false }))
-
   app.use(fileUpload())
 
   /**
@@ -188,12 +187,12 @@ async function consturctServer(moduleDefs) {
   app.use(express.static(path.join(__dirname, 'public')))
 
   /**
-   * Cache
+   * 缓存请求，两分钟内同样的请求会从缓存里读取数据，不会向网易云音乐服务器发送请求
    */
   app.use(cache('2 minutes', (_, res) => res.statusCode === 200))
 
   /**
-   * Special Routers
+   * 特殊路由
    */
   const special = {
     'daily_signin.js': '/daily_signin',
@@ -202,21 +201,23 @@ async function consturctServer(moduleDefs) {
   }
 
   /**
-   * Load every modules in this directory
+   * 加载/module目录下的所有模块，每个模块对应一个接口
    */
   const moduleDefinitions =
     moduleDefs ||
     (await getModulesDefinitions(path.join(__dirname, 'module'), special))
 
   for (const moduleDef of moduleDefinitions) {
-    // Register the route.
+    // 注册路由
     app.use(moduleDef.route, async (req, res) => {
+      // cookie也可以从查询参数、请求体上传来
       ;[req.query, req.body].forEach((item) => {
         if (typeof item.cookie === 'string') {
           item.cookie = cookieToJson(decode(item.cookie))
         }
       })
 
+      // 把cookie、查询参数、请求头、文件都整合到一起，作为参数传给每个模块
       let query = Object.assign(
         {},
         { cookie: req.cookies },
@@ -226,15 +227,15 @@ async function consturctServer(moduleDefs) {
       )
 
       try {
+        // 执行模块方法，即发起对网易云音乐接口的请求
         const moduleResponse = await moduleDef.module(query, (...params) => {
           // 参数注入客户端IP
           const obj = [...params]
+          // 处理ip，为了实现IPv4-IPv6互通，IPv4地址前会增加::ffff:
           let ip = req.ip
-
           if (ip.substr(0, 7) == '::ffff:') {
             ip = ip.substr(7)
           }
-          // console.log(ip)
           obj[3] = {
             ...obj[3],
             ip,
@@ -243,10 +244,11 @@ async function consturctServer(moduleDefs) {
         })
         console.log('[OK]', decode(req.originalUrl))
 
+        // 请求成功后，获取响应中的cookie，并且通过Set-Cookie响应头来将这个cookie设置到前端浏览器上
         const cookies = moduleResponse.cookie
         if (Array.isArray(cookies) && cookies.length > 0) {
           if (req.protocol === 'https') {
-            // Try to fix CORS SameSite Problem
+            // 去掉跨域请求cookie的SameSite限制，这个属性用来限制第三方Cookie，从而减少安全风险
             res.append(
               'Set-Cookie',
               cookies.map((cookie) => {
@@ -257,12 +259,15 @@ async function consturctServer(moduleDefs) {
             res.append('Set-Cookie', cookies)
           }
         }
+        // 以网易云音乐接口返回的状态码和响应体响应请求
         res.status(moduleResponse.status).send(moduleResponse.body)
       } catch (/** @type {*} */ moduleResponse) {
+        // 请求失败处理
         console.log('[ERR]', decode(req.originalUrl), {
           status: moduleResponse.status,
           body: moduleResponse.body,
         })
+        // 没有响应体，返回404
         if (!moduleResponse.body) {
           res.status(404).send({
             code: 404,
@@ -271,6 +276,7 @@ async function consturctServer(moduleDefs) {
           })
           return
         }
+        // 301代表调用了需要登录的接口，但是并没有登录
         if (moduleResponse.body.code == '301')
           moduleResponse.body.msg = '需要登录'
         res.append('Set-Cookie', moduleResponse.cookie)

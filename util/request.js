@@ -44,18 +44,21 @@ const chooseUserAgent = (ua = false) => {
 }
 const createRequest = (method, url, data = {}, options) => {
   return new Promise((resolve, reject) => {
+    // 随机设置用户代理
     let headers = { 'User-Agent': chooseUserAgent(options.ua) }
+    // 如果是post请求，修改编码格式，axios默认的编码格式为json
     if (method.toUpperCase() === 'POST')
       headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    // 伪造Referer头，网易云音乐接口的基本路径为https://music.163.com/xxx，所以伪造Referer头
     if (url.includes('music.163.com'))
       headers['Referer'] = 'https://music.163.com'
+    // 设置ip头部
     let ip = options.realIP || options.ip || ''
-    // console.log(ip)
     if (ip) {
       headers['X-Real-IP'] = ip
       headers['X-Forwarded-For'] = ip
     }
-    // headers['X-Real-IP'] = '118.88.88.88'
+    // 设置cookie
     if (typeof options.cookie === 'object') {
       if (!options.cookie.MUSIC_U) {
         // 游客
@@ -74,7 +77,7 @@ const createRequest = (method, url, data = {}, options) => {
     } else if (options.cookie) {
       headers['Cookie'] = options.cookie
     }
-    // console.log(options.cookie, headers['Cookie'])
+    // 加密请求数据
     if (options.crypto === 'weapi') {
       let csrfToken = (headers['Cookie'] || '').match(/_csrf=([^(;|$)]+)/)
       data.csrf_token = csrfToken ? csrfToken[1] : ''
@@ -119,7 +122,9 @@ const createRequest = (method, url, data = {}, options) => {
       data = encrypt.eapi(options.url, data)
       url = url.replace(/\w*api/, 'eapi')
     }
+    // 响应的数据结构
     const answer = { status: 500, body: {}, cookie: [] }
+    // 请求配置
     let settings = {
       method: method,
       url: url,
@@ -130,7 +135,7 @@ const createRequest = (method, url, data = {}, options) => {
     }
 
     if (options.crypto === 'eapi') settings.encoding = null
-
+    // 配置代理
     if (options.proxy) {
       if (options.proxy.indexOf('pac') > -1) {
         settings.httpAgent = new PacProxyAgent(options.proxy)
